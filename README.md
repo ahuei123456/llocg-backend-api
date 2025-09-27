@@ -1,6 +1,6 @@
 # LLOCG Backend API
 
-This is a backend API for a Love Live! card game (LLOCG) database, built with Rust, Axum, and SQLx.
+This is a backend API for a Love Live! Official Card Game (LLOCG) database, built with Rust, Axum, and SQLx.
 
 ## Prerequisites
 
