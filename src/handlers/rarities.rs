@@ -1,13 +1,12 @@
 use crate::{
-    db,
+    AppState, db,
     models::{CreateRarity, RarityType},
-    AppState,
 };
 use axum::{
+    Json as AxumJson,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    Json as AxumJson,
 };
 use std::collections::HashMap;
 

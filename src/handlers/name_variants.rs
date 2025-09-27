@@ -1,12 +1,9 @@
-use crate::{
-    models::CreateNameVariant,
-    AppState,
-};
+use crate::{AppState, models::CreateNameVariant};
 use axum::{
+    Json as AxumJson,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    Json as AxumJson,
 };
 use std::collections::HashMap;
 
@@ -44,7 +41,10 @@ pub async fn add(
             StatusCode::CONFLICT,
             format!("Variant name '{}' already exists.", payload.variant_name),
         )),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("DB error: {}", e),
+        )),
     }
 }
 

@@ -1,9 +1,9 @@
-use crate::{models::CreateGroupVariant, AppState};
+use crate::{AppState, models::CreateGroupVariant};
 use axum::{
+    Json as AxumJson,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    Json as AxumJson,
 };
 use std::collections::HashMap;
 
@@ -23,7 +23,10 @@ pub async fn add(
     if cache.contains_key(&payload.variant_name) {
         return Err((
             StatusCode::CONFLICT,
-            format!("Group variant name '{}' already exists.", payload.variant_name),
+            format!(
+                "Group variant name '{}' already exists.",
+                payload.variant_name
+            ),
         ));
     }
 
@@ -39,9 +42,15 @@ pub async fn add(
         }
         Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => Err((
             StatusCode::CONFLICT,
-            format!("Group variant name '{}' already exists.", payload.variant_name),
+            format!(
+                "Group variant name '{}' already exists.",
+                payload.variant_name
+            ),
         )),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("DB error: {}", e),
+        )),
     }
 }
 

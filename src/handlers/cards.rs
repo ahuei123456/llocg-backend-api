@@ -1,13 +1,12 @@
 use crate::{
-    db,
+    AppState, db,
     models::{CreateCard, FullCard},
-    AppState,
 };
 use axum::{
+    Json as AxumJson,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    Json as AxumJson,
 };
 
 /// API handler to get a single card by its ID.
@@ -31,7 +30,15 @@ pub async fn create(
     let name_variant_cache = state.name_variant_cache.read().await;
     let group_variant_cache = state.group_variant_cache.read().await;
 
-    match db::create_full_card(&state.pool, &rarity_cache, &name_variant_cache, &group_variant_cache, payload).await {
+    match db::create_full_card(
+        &state.pool,
+        &rarity_cache,
+        &name_variant_cache,
+        &group_variant_cache,
+        payload,
+    )
+    .await
+    {
         Ok(card) => Ok((StatusCode::CREATED, Json(card))),
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
     }

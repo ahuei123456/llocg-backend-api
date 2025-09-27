@@ -1,9 +1,8 @@
+use crate::Pool;
 use crate::models::{
     Card, CardType, CardTypeSpecifics, CharacterCard, CreateCard, CreateCardTypeSpecifics,
-    FullCard, HeartColor, LiveCard, RarityType,
-    Printing,
+    FullCard, HeartColor, LiveCard, Printing, RarityType,
 };
-use crate::Pool;
 use futures::try_join;
 use std::collections::HashMap;
 
@@ -101,12 +100,15 @@ pub async fn create_full_card(
     }
 
     // 3. Insert the single printing.
-    sqlx::query("INSERT INTO printings (card_id, rarity_code, rarity_type, image_url) VALUES (?, ?, ?, ?)")
-        .bind(card_id)
-        .bind(&new_card.rarity_code)
-        .bind(rarity_type)
-        .bind(&new_card.image_url)
-        .execute(&mut *tx).await?;
+    sqlx::query(
+        "INSERT INTO printings (card_id, rarity_code, rarity_type, image_url) VALUES (?, ?, ?, ?)",
+    )
+    .bind(card_id)
+    .bind(&new_card.rarity_code)
+    .bind(rarity_type)
+    .bind(&new_card.image_url)
+    .execute(&mut *tx)
+    .await?;
 
     // 4. Insert hearts.
     if let Some(specifics) = &new_card.type_specifics {
@@ -117,8 +119,11 @@ pub async fn create_full_card(
 
         for (color, count) in hearts {
             sqlx::query("INSERT INTO card_hearts (card_id, color, count) VALUES (?, ?, ?)")
-                .bind(card_id).bind(color).bind(*count)
-                .execute(&mut *tx).await?;
+                .bind(card_id)
+                .bind(color)
+                .bind(*count)
+                .execute(&mut *tx)
+                .await?;
         }
     }
 
@@ -129,14 +134,28 @@ pub async fn create_full_card(
             .get(group_name)
             .cloned()
             .unwrap_or_else(|| group_name.clone());
-        let group_id: i64 = sqlx::query_scalar("SELECT id FROM groups WHERE name = ?").bind(canonical_group_name).fetch_one(&mut *tx).await?;
-        sqlx::query("INSERT INTO card_groups (card_id, group_id) VALUES (?, ?)").bind(card_id).bind(group_id).execute(&mut *tx).await?;
+        let group_id: i64 = sqlx::query_scalar("SELECT id FROM groups WHERE name = ?")
+            .bind(canonical_group_name)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO card_groups (card_id, group_id) VALUES (?, ?)")
+            .bind(card_id)
+            .bind(group_id)
+            .execute(&mut *tx)
+            .await?;
     }
 
     // 6. Link units. This assumes units already exist.
     for unit_name in &new_card.units {
-        let unit_id: i64 = sqlx::query_scalar("SELECT id FROM units WHERE name = ?").bind(unit_name).fetch_one(&mut *tx).await?;
-        sqlx::query("INSERT INTO card_units (card_id, unit_id) VALUES (?, ?)").bind(card_id).bind(unit_id).execute(&mut *tx).await?;
+        let unit_id: i64 = sqlx::query_scalar("SELECT id FROM units WHERE name = ?")
+            .bind(unit_name)
+            .fetch_one(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO card_units (card_id, unit_id) VALUES (?, ?)")
+            .bind(card_id)
+            .bind(unit_id)
+            .execute(&mut *tx)
+            .await?;
     }
 
     // 7. Link skills. This will create the skill if it doesn't exist.
@@ -145,11 +164,19 @@ pub async fn create_full_card(
         // `ON CONFLICT(text) DO NOTHING` is safe and handles the case where the skill already exists.
         sqlx::query("INSERT INTO skills (text) VALUES (?) ON CONFLICT(text) DO NOTHING")
             .bind(&skill_text)
-            .execute(&mut *tx).await?;
+            .execute(&mut *tx)
+            .await?;
 
-        let skill_id: i64 = sqlx::query_scalar("SELECT id FROM skills WHERE text = ?").bind(skill_text).fetch_one(&mut *tx).await?;
+        let skill_id: i64 = sqlx::query_scalar("SELECT id FROM skills WHERE text = ?")
+            .bind(skill_text)
+            .fetch_one(&mut *tx)
+            .await?;
 
-        sqlx::query("INSERT INTO card_skills (card_id, skill_id) VALUES (?, ?)").bind(card_id).bind(skill_id).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO card_skills (card_id, skill_id) VALUES (?, ?)")
+            .bind(card_id)
+            .bind(skill_id)
+            .execute(&mut *tx)
+            .await?;
     }
 
     // If all queries were successful, commit the transaction.
@@ -243,10 +270,7 @@ async fn fetch_hearts_for_card(
 /// # Arguments
 /// * `pool` - The database connection pool.
 /// * `card_id` - The ID of the card.
-async fn fetch_printings_for_card(
-    pool: &Pool,
-    card_id: i64,
-) -> Result<Vec<Printing>, sqlx::Error> {
+async fn fetch_printings_for_card(pool: &Pool, card_id: i64) -> Result<Vec<Printing>, sqlx::Error> {
     sqlx::query_as("SELECT * FROM printings WHERE card_id = ?")
         .bind(card_id)
         .fetch_all(pool)
@@ -265,10 +289,20 @@ async fn fetch_type_specifics(
     card_type: CardType,
 ) -> Result<Option<CardTypeSpecifics>, sqlx::Error> {
     match card_type {
-        CardType::Character => sqlx::query_as::<_, CharacterCard>("SELECT * FROM character_cards WHERE card_id = ?")
-            .bind(card_id).fetch_optional(pool).await.map(|opt| opt.map(CardTypeSpecifics::Character)),
-        CardType::Live => sqlx::query_as::<_, LiveCard>("SELECT * FROM live_cards WHERE card_id = ?")
-            .bind(card_id).fetch_optional(pool).await.map(|opt| opt.map(CardTypeSpecifics::Live)),
+        CardType::Character => {
+            sqlx::query_as::<_, CharacterCard>("SELECT * FROM character_cards WHERE card_id = ?")
+                .bind(card_id)
+                .fetch_optional(pool)
+                .await
+                .map(|opt| opt.map(CardTypeSpecifics::Character))
+        }
+        CardType::Live => {
+            sqlx::query_as::<_, LiveCard>("SELECT * FROM live_cards WHERE card_id = ?")
+                .bind(card_id)
+                .fetch_optional(pool)
+                .await
+                .map(|opt| opt.map(CardTypeSpecifics::Live))
+        }
         CardType::Energy => Ok(None),
     }
 }
@@ -284,7 +318,10 @@ pub async fn add_rarity(pool: &Pool, code: &str, r_type: RarityType) -> Result<(
 }
 
 /// Deletes a rarity mapping from the database.
-pub async fn delete_rarity(pool: &Pool, code: &str) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+pub async fn delete_rarity(
+    pool: &Pool,
+    code: &str,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
     sqlx::query("DELETE FROM rarities WHERE rarity_code = ?")
         .bind(code)
         .execute(pool)
