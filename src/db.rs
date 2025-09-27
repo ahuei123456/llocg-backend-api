@@ -51,17 +51,23 @@ pub async fn fetch_full_card(pool: &Pool, id: i64) -> Result<FullCard, sqlx::Err
 pub async fn create_full_card(
     pool: &Pool,
     rarity_cache: &HashMap<String, RarityType>,
+    name_variant_cache: &HashMap<String, String>,
     new_card: CreateCard,
 ) -> Result<FullCard, sqlx::Error> {
     // Start a transaction. All operations within this block are atomic.
     let mut tx = pool.begin().await?;
 
-    // 0. Look up the rarity type from the in-memory cache.
-    // If the rarity code is not in our cache of parallel rarities, default to 'Regular'.
+    // 1a. Look up rarity type from the cache. Default to 'Regular' if not found.
     let rarity_type = rarity_cache
         .get(&new_card.rarity_code)
         .cloned()
         .unwrap_or(RarityType::Regular);
+
+    // 1b. Normalize the card name using the cache.
+    let canonical_name = name_variant_cache
+        .get(&new_card.name)
+        .cloned()
+        .unwrap_or_else(|| new_card.name.clone());
 
     // 1. Insert the base card and get its new ID.
     let card_id = sqlx::query(
@@ -71,14 +77,14 @@ pub async fn create_full_card(
     .bind(&new_card.series_code)
     .bind(&new_card.set_code)
     .bind(&new_card.number_in_set)
-    .bind(&new_card.name)
+    .bind(&canonical_name)
     .bind(new_card.card_type)
     .execute(&mut *tx)
     .await?
     .last_insert_rowid();
 
     // 2. Insert card-specific data (Character, Live, etc.).
-    if let Some(specifics) = new_card.type_specifics {
+    if let Some(specifics) = &new_card.type_specifics {
         match specifics {
             CreateCardTypeSpecifics::Character(c) => {
                 sqlx::query("INSERT INTO character_cards (card_id, cost, blades, blade_heart) VALUES (?, ?, ?, ?)")
@@ -102,26 +108,33 @@ pub async fn create_full_card(
         .execute(&mut *tx).await?;
 
     // 4. Insert hearts.
-    for (color, count) in new_card.hearts {
-        sqlx::query("INSERT INTO card_hearts (card_id, color, count) VALUES (?, ?, ?)")
-            .bind(card_id).bind(color).bind(count)
-            .execute(&mut *tx).await?;
+    if let Some(specifics) = &new_card.type_specifics {
+        let hearts = match specifics {
+            CreateCardTypeSpecifics::Character(c) => &c.hearts,
+            CreateCardTypeSpecifics::Live(l) => &l.hearts,
+        };
+
+        for (color, count) in hearts {
+            sqlx::query("INSERT INTO card_hearts (card_id, color, count) VALUES (?, ?, ?)")
+                .bind(card_id).bind(color).bind(*count)
+                .execute(&mut *tx).await?;
+        }
     }
 
     // 5. Link groups. This assumes groups already exist.
-    for group_name in new_card.groups {
+    for group_name in &new_card.groups {
         let group_id: i64 = sqlx::query_scalar("SELECT id FROM groups WHERE name = ?").bind(group_name).fetch_one(&mut *tx).await?;
         sqlx::query("INSERT INTO card_groups (card_id, group_id) VALUES (?, ?)").bind(card_id).bind(group_id).execute(&mut *tx).await?;
     }
 
     // 6. Link units. This assumes units already exist.
-    for unit_name in new_card.units {
+    for unit_name in &new_card.units {
         let unit_id: i64 = sqlx::query_scalar("SELECT id FROM units WHERE name = ?").bind(unit_name).fetch_one(&mut *tx).await?;
         sqlx::query("INSERT INTO card_units (card_id, unit_id) VALUES (?, ?)").bind(card_id).bind(unit_id).execute(&mut *tx).await?;
     }
 
     // 7. Link skills. This will create the skill if it doesn't exist.
-    for skill_text in new_card.skills {
+    for skill_text in &new_card.skills {
         // Insert the skill text if it doesn't exist, then get its ID.
         // `ON CONFLICT(text) DO NOTHING` is safe and handles the case where the skill already exists.
         sqlx::query("INSERT INTO skills (text) VALUES (?) ON CONFLICT(text) DO NOTHING")
@@ -140,6 +153,11 @@ pub async fn create_full_card(
     fetch_full_card(pool, card_id).await
 }
 
+/// Helper function to fetch the name of a set from its code.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `set_code` - The code of the set to look up (e.g., "bp2").
 async fn fetch_set_name(pool: &Pool, set_code: &str) -> Result<String, sqlx::Error> {
     let row: (String,) = sqlx::query_as("SELECT name FROM sets WHERE set_code = ?")
         .bind(set_code)
@@ -148,6 +166,11 @@ async fn fetch_set_name(pool: &Pool, set_code: &str) -> Result<String, sqlx::Err
     Ok(row.0)
 }
 
+/// Helper function to fetch all group names associated with a card.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `card_id` - The ID of the card.
 async fn fetch_groups_for_card(pool: &Pool, card_id: i64) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT g.name FROM groups g
@@ -159,6 +182,11 @@ async fn fetch_groups_for_card(pool: &Pool, card_id: i64) -> Result<Vec<String>,
     .await
 }
 
+/// Helper function to fetch all unit names associated with a card.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `card_id` - The ID of the card.
 async fn fetch_units_for_card(pool: &Pool, card_id: i64) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT u.name FROM units u
@@ -170,6 +198,11 @@ async fn fetch_units_for_card(pool: &Pool, card_id: i64) -> Result<Vec<String>, 
     .await
 }
 
+/// Helper function to fetch all skill texts associated with a card.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `card_id` - The ID of the card.
 async fn fetch_skills_for_card(pool: &Pool, card_id: i64) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT s.text FROM skills s
@@ -181,6 +214,11 @@ async fn fetch_skills_for_card(pool: &Pool, card_id: i64) -> Result<Vec<String>,
     .await
 }
 
+/// Helper function to fetch the heart counts for a card.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `card_id` - The ID of the card.
 async fn fetch_hearts_for_card(
     pool: &Pool,
     card_id: i64,
@@ -194,6 +232,11 @@ async fn fetch_hearts_for_card(
     Ok(hearts.into_iter().collect())
 }
 
+/// Helper function to fetch all printings for a card.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `card_id` - The ID of the card.
 async fn fetch_printings_for_card(
     pool: &Pool,
     card_id: i64,
@@ -204,6 +247,12 @@ async fn fetch_printings_for_card(
         .await
 }
 
+/// Helper function to fetch the type-specific data (Character or Live) for a card.
+///
+/// # Arguments
+/// * `pool` - The database connection pool.
+/// * `card_id` - The ID of the card.
+/// * `card_type` - The `CardType` enum for the card.
 async fn fetch_type_specifics(
     pool: &Pool,
     card_id: i64,
@@ -229,10 +278,9 @@ pub async fn add_rarity(pool: &Pool, code: &str, r_type: RarityType) -> Result<(
 }
 
 /// Deletes a rarity mapping from the database.
-pub async fn delete_rarity(pool: &Pool, code: &str) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM rarities WHERE rarity_code = ?")
+pub async fn delete_rarity(pool: &Pool, code: &str) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query("DELETE FROM rarities WHERE rarity_code = ?")
         .bind(code)
         .execute(pool)
-        .await?;
-    Ok(result.rows_affected())
+        .await
 }

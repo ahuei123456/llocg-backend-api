@@ -1,0 +1,76 @@
+use axum::{
+    routing::{get, post},
+    Router,
+};
+use sqlx::sqlite::SqlitePoolOptions;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::RwLock;
+use crate::models::RarityType;
+
+pub mod db;
+pub mod handlers;
+pub mod models;
+
+/// A type alias for the database connection pool.
+pub type Pool = sqlx::SqlitePool;
+
+/// The shared state for our application.
+#[derive(Clone)]
+pub struct ApiState {
+    pub pool: Pool,
+    pub rarity_cache: Arc<RwLock<HashMap<String, models::RarityType>>>,
+    pub name_variant_cache: Arc<RwLock<HashMap<String, String>>>,
+}
+
+/// The shared state for our application, including the database connection pool.
+pub type AppState = axum::extract::State<ApiState>;
+
+/// Creates the application state, including the database pool and caches.
+pub async fn create_app_state(db_url: &str) -> Result<ApiState, Box<dyn std::error::Error>> {
+    // Set up the database connection pool
+    let pool: Pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect(db_url)
+        .await?;
+
+    // --- Populate the rarity cache at startup ---
+    println!("Loading rarities into cache...");
+    let rarities: Vec<(String, RarityType)> =
+        sqlx::query_as("SELECT rarity_code, rarity_type FROM rarities")
+            .fetch_all(&pool)
+            .await?;
+    let rarity_cache: Arc<RwLock<HashMap<String, RarityType>>> =
+        Arc::new(RwLock::new(rarities.into_iter().collect()));
+    println!("-> Loaded {} rarity mappings.", rarity_cache.read().await.len());
+
+    // --- Populate the name variant cache at startup ---
+    println!("Loading name variants into cache...");
+    let variants: Vec<(String, String)> =
+        sqlx::query_as("SELECT variant_name, canonical_name FROM name_variants")
+            .fetch_all(&pool)
+            .await?;
+    let name_variant_cache: Arc<RwLock<HashMap<String, String>>> =
+        Arc::new(RwLock::new(variants.into_iter().collect()));
+    println!("-> Loaded {} name variant mappings.", name_variant_cache.read().await.len());
+
+    Ok(ApiState {
+        pool,
+        rarity_cache,
+        name_variant_cache,
+    })
+}
+
+/// Creates the main Axum router for the application.
+pub fn create_router(app_state: ApiState) -> Router {
+    Router::new()
+        .route("/cards", get(handlers::cards::get_all).post(handlers::cards::create))
+        .route("/cards/:id", get(handlers::cards::get_by_id))
+        .route("/rarities", get(handlers::rarities::get_all).post(handlers::rarities::add))
+        .route("/rarities/:code", get(handlers::rarities::get_by_code).delete(handlers::rarities::delete))
+        .route("/variants/names", get(handlers::name_variants::get_all).post(handlers::name_variants::add))
+        .route(
+            "/variants/names/:variant",
+            axum::routing::delete(handlers::name_variants::delete),
+        )
+        .with_state(app_state)
+}
