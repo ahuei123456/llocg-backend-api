@@ -69,14 +69,14 @@ pub async fn delete(
     let mut cache = state.rarity_cache.write().await;
 
     // Attempt to delete from the database.
-    match db::delete_rarity(&state.pool, &code).await {
-        Ok(rows_affected) => {
-            if rows_affected.rows_affected() > 0 {
-                cache.remove(&code);
-            }
-            Ok(StatusCode::NO_CONTENT)
-        }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
-    }
-}
+    let result = db::delete_rarity(&state.pool, &code)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    // If the row was successfully deleted from the DB, remove it from the cache.
+    if result.rows_affected() > 0 {
+        cache.remove(&code);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}

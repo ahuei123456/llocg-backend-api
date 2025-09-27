@@ -52,6 +52,7 @@ pub async fn create_full_card(
     pool: &Pool,
     rarity_cache: &HashMap<String, RarityType>,
     name_variant_cache: &HashMap<String, String>,
+    group_variant_cache: &HashMap<String, String>,
     new_card: CreateCard,
 ) -> Result<FullCard, sqlx::Error> {
     // Start a transaction. All operations within this block are atomic.
@@ -123,7 +124,12 @@ pub async fn create_full_card(
 
     // 5. Link groups. This assumes groups already exist.
     for group_name in &new_card.groups {
-        let group_id: i64 = sqlx::query_scalar("SELECT id FROM groups WHERE name = ?").bind(group_name).fetch_one(&mut *tx).await?;
+        // Normalize the group name using the cache.
+        let canonical_group_name = group_variant_cache
+            .get(group_name)
+            .cloned()
+            .unwrap_or_else(|| group_name.clone());
+        let group_id: i64 = sqlx::query_scalar("SELECT id FROM groups WHERE name = ?").bind(canonical_group_name).fetch_one(&mut *tx).await?;
         sqlx::query("INSERT INTO card_groups (card_id, group_id) VALUES (?, ?)").bind(card_id).bind(group_id).execute(&mut *tx).await?;
     }
 
@@ -150,7 +156,7 @@ pub async fn create_full_card(
     tx.commit().await?;
 
     // Fetch and return the newly created card.
-    fetch_full_card(pool, card_id).await
+    fetch_full_card(pool, card_id).await // This function doesn't need the caches
 }
 
 /// Helper function to fetch the name of a set from its code.

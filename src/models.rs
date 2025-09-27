@@ -317,6 +317,13 @@ pub struct CreateNameVariant {
     pub canonical_name: String,
 }
 
+/// Represents the payload for creating a new group name variant.
+#[derive(Debug, Deserialize)]
+pub struct CreateGroupVariant {
+    pub variant_name: String,
+    pub canonical_name: String,
+}
+
 #[cfg(test)]
 mod test_character {
     use super::*;
