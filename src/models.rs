@@ -118,6 +118,12 @@ pub struct LiveCard {
     pub special_heart: Option<SpecialHeart>,
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct NameVariant {
+    pub variant_name: String,
+    pub canonical_name: String,
+}
+
 // This struct doesn't map to a table but will be used to return
 // a fully composed card object in our API responses.
 #[derive(Debug, Serialize, Deserialize)]
