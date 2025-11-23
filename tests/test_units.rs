@@ -3,22 +3,21 @@ use axum::{
     http::{self, Request, StatusCode},
 };
 use llocg_backend_api::create_router;
-use std::collections::HashMap;
 use tower::ServiceExt; // for `oneshot`
 
 mod common;
 
 #[tokio::test]
-async fn test_name_variants_endpoints() {
-    let app_state = common::setup_test_env().await;
-    let app = create_router(app_state.clone());
+async fn test_units_endpoints() {
+    let state = common::setup_test_env().await;
+    let app = create_router(state);
 
-    // 1. Initially, GET all name variants should return the defaults from migrations.
+    // 1. Initially, GET all sets should return an empty list as none are added by default.
     let response = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/variants/names")
+                .uri("/units")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -29,28 +28,18 @@ async fn test_name_variants_endpoints() {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let name_variants: HashMap<String, String> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(name_variants.len(), 2);
-    assert_eq!(
-        name_variants.get("Kanon Shibuya"),
-        Some(&"Shibuya Kanon".to_string())
-    );
-    assert_eq!(
-        name_variants.get("澁谷かのん"),
-        Some(&"Shibuya Kanon".to_string())
-    );
+    let units: Vec<String> = serde_json::from_slice(&body).unwrap();
+    assert!(units.len() == 20);
 
-    // 2. POST a new name variant.
+    // 2. POST a new unit.
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(http::Method::POST)
-                .uri("/variants/names")
+                .uri("/units")
                 .header(http::header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"variant_name": "Test Variant", "canonical_name": "Test Canonical"}"#,
-                ))
+                .body(Body::from(r#"{"name": "AiScream!"}"#))
                 .unwrap(),
         )
         .await
@@ -58,12 +47,12 @@ async fn test_name_variants_endpoints() {
 
     assert_eq!(response.status(), StatusCode::CREATED);
 
-    // 3. GET all variants again; it should contain the new one.
+    // 3. GET all sets again; it should contain the new one.
     let response = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/variants/names")
+                .uri("/units")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -74,20 +63,33 @@ async fn test_name_variants_endpoints() {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let name_variants: HashMap<String, String> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(name_variants.len(), 3);
-    assert_eq!(
-        name_variants.get("Test Variant"),
-        Some(&"Test Canonical".to_string())
-    );
+    let units: Vec<String> = serde_json::from_slice(&body).unwrap();
+    assert_eq!(units.len(), 21);
+    assert_eq!(units[20], "AiScream!");
 
-    // 4. DELETE the variant.
+    // 4. POST a duplicate set to test conflict.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(http::Method::POST)
+                .uri("/units")
+                .header(http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"name": "AiScream!"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+
+    // 5. DELETE the set.
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method(http::Method::DELETE)
-                .uri("/variants/names/Test%20Variant") // URL encode the space
+                .uri("/units/AiScream!")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -96,11 +98,11 @@ async fn test_name_variants_endpoints() {
 
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 
-    // 5. GET all variants again; it should be back to the defaults.
+    // 6. GET all sets again; it should be empty.
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/variants/names")
+                .uri("/units")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -110,6 +112,6 @@ async fn test_name_variants_endpoints() {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let name_variants: HashMap<String, String> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(name_variants.len(), 2);
+    let units: Vec<String> = serde_json::from_slice(&body).unwrap();
+    assert!(units.len() == 20);
 }

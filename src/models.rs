@@ -57,21 +57,34 @@ pub enum SpecialHeart {
 
 // Structs mapping directly to database tables.
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct Set {
     pub id: i64,
     pub set_code: String,
     pub name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct SetResponse {
+    pub set_code: String,
+    pub name: String,
+}
+
+
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct Group {
     pub id: i64,
     pub name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct Unit {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+pub struct Name {
     pub id: i64,
     pub name: String,
 }
@@ -82,7 +95,7 @@ pub struct Card {
     pub series_code: String,
     pub set_code: String,
     pub number_in_set: String,
-    pub name: String,
+    pub name_id: i64,
     pub card_type: CardType,
 }
 
@@ -129,7 +142,7 @@ pub struct NameVariant {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FullCard {
     #[serde(flatten)]
-    pub base: Card,
+    pub base: BaseCard,
     pub set_name: String,
     pub groups: Vec<String>,
     pub units: Vec<String>,
@@ -138,6 +151,17 @@ pub struct FullCard {
     pub printings: Vec<Printing>,
     #[serde(flatten)]
     pub type_specifics: Option<CardTypeSpecifics>,
+}
+
+/// A subset of the Card model used for composing the FullCard response.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BaseCard {
+    pub id: i64,
+    pub series_code: String,
+    pub set_code: String,
+    pub number_in_set: String,
+    pub name: String,
+    pub card_type: CardType,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -328,6 +352,25 @@ pub struct CreateNameVariant {
 pub struct CreateGroupVariant {
     pub variant_name: String,
     pub canonical_name: String,
+}
+
+/// Represents the payload for creating a new set.
+#[derive(Debug, Deserialize)]
+pub struct CreateSet {
+    pub set_code: String,
+    pub name: String,
+}
+
+/// Represents the payload for creating a new group.
+#[derive(Debug, Deserialize)]
+pub struct CreateGroup {
+    pub name: String,
+}
+
+/// Represents the payload for creating a new unit.
+#[derive(Debug, Deserialize)]
+pub struct CreateUnit {
+    pub name: String,
 }
 
 #[cfg(test)]
